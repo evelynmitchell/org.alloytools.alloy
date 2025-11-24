@@ -23,6 +23,7 @@ import static edu.mit.csail.sdg.ast.Sig.UNIV;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -39,6 +40,7 @@ import edu.mit.csail.sdg.alloy4.Util;
 import edu.mit.csail.sdg.alloy4.XMLNode;
 import edu.mit.csail.sdg.ast.Attr;
 import edu.mit.csail.sdg.ast.Expr;
+import edu.mit.csail.sdg.ast.ExprHasName;
 import edu.mit.csail.sdg.ast.ExprVar;
 import edu.mit.csail.sdg.ast.Sig;
 import edu.mit.csail.sdg.ast.Sig.Field;
@@ -217,7 +219,7 @@ public final class A4SolutionReader {
                     break;
                 }
             if (ans == null) {
-                ans = new PrimSig(label, (PrimSig) parent, isAbstract, isLone, isOne, isSome, isPrivate, isMeta, isEnum, isVar);
+                ans = new PrimSig(null, label, Pos.UNKNOWN, (PrimSig) parent, isAbstract, isLone, isOne, isSome, isPrivate, isMeta, isEnum, isVar);
                 allsigs.add(ans);
             }
         } else {
@@ -228,7 +230,7 @@ public final class A4SolutionReader {
                     break;
                 }
             if (ans == null) {
-                ans = new SubsetSig(label, parents, isExact, isLone, isOne, isSome, isPrivate, isMeta, isVar);
+                ans = new SubsetSig(null, label, null, parents, isExact, isLone, isOne, isSome, isPrivate, isMeta, isVar);
                 allsigs.add(ans);
             }
         }
@@ -302,10 +304,11 @@ public final class A4SolutionReader {
                 choices.remove(f);
                 break;
             }
-        if (field == null)
-            field = parent.addTrickyField(Pos.UNKNOWN, isPrivate, null, null, isMeta, isVar, new String[] {
-                                                                                                           label
-            }, UNIV.join(type))[0];
+        if (field == null){
+            ExprHasName labelExpr = ExprVar.make(null, label);
+            field = parent.addTrickyField(Pos.UNKNOWN, isPrivate, null, null, isMeta, isVar, Arrays.asList(labelExpr)
+            , UNIV.join(type))[0];
+        }
         TupleSet ts = parseTuples(node, arity);
         expr2ts.put(field, ts);
         return field;
@@ -319,6 +322,7 @@ public final class A4SolutionReader {
         if (!node.is("skolem"))
             throw new IOException("ID " + id + " is not a skolem.");
         String label = label(node);
+        Attr isPrivate = yes(node, "private") ? Attr.PRIVATE : null;
         Expr type = null;
         for (XMLNode sub : node)
             if (sub.is("types")) {
@@ -360,14 +364,14 @@ public final class A4SolutionReader {
         final int bitwidth = Integer.parseInt(inst.getAttribute("bitwidth"));
         final int maxseq = Integer.parseInt(inst.getAttribute("maxseq"));
         final int tracelength;
-        final int backloop;
+        final int looplen;
         final int maxtrace;
         final int mintrace;
         try {
             mintrace = Integer.parseInt(inst.getAttribute("mintrace"));
             maxtrace = Integer.parseInt(inst.getAttribute("maxtrace"));
             tracelength = Integer.parseInt(inst.getAttribute("tracelength"));
-            backloop = Integer.parseInt(inst.getAttribute("backloop"));
+            looplen = Integer.parseInt(inst.getAttribute("looplength"));
         } catch (Exception ex) {
             throw new ErrorSyntax("Missing trace attributes.");
         }
@@ -491,7 +495,7 @@ public final class A4SolutionReader {
                     sol.kr2type(r, v.type());
                 }
                 // Done!
-                sol.solve(null, prev, backloop); // [electrum] merge current solution with previous, if any
+                sol.solve(null, prev, looplen); // [electrum] merge current solution with previous, if any
             }
     }
 
@@ -515,7 +519,7 @@ public final class A4SolutionReader {
             if (ex instanceof Err)
                 throw ((Err) ex);
             else
-                throw new ErrorFatal("Fatal error occured: " + ex, ex);
+                throw new ErrorFatal("Fatal error occurred: " + ex, ex);
         }
     }
 }

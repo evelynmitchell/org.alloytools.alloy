@@ -53,6 +53,7 @@ import edu.mit.csail.sdg.alloy4viz.VizGUI;
 import edu.mit.csail.sdg.ast.Command;
 import edu.mit.csail.sdg.ast.Module;
 import edu.mit.csail.sdg.ast.Sig;
+import edu.mit.csail.sdg.ast.Sig.PrimSig;
 import edu.mit.csail.sdg.parser.CompUtil;
 import edu.mit.csail.sdg.translator.A4Options;
 import edu.mit.csail.sdg.translator.A4Solution;
@@ -78,7 +79,7 @@ import edu.mit.csail.sdg.translator.TranslateAlloyToKodkod;
  *           parallel problem)
  */
 
-final class SimpleReporter extends A4Reporter {
+public final class SimpleReporter extends A4Reporter {
 
     public static final class SimpleCallback1 implements WorkerCallback {
 
@@ -217,11 +218,19 @@ final class SimpleReporter extends A4Reporter {
             if (array[0].equals("resultCNF")) {
                 results.add(null);
                 span.setLength(len3);
-                span.log("   File written to " + array[1] + "\n\n");
+                span.log("   File written to ");
+                String linkDestination = "CNF: " + array[1];
+                span.logLink(array[1].toString(), linkDestination);
+                span.log("\n\n");
+                gui.doSetLatest(linkDestination);
             }
             if (array[0].equals("debug") && verbosity > 2) {
                 span.log("   " + array[1] + "\n");
                 len2 = len3 = len4 = span.getLength();
+            }
+            if (array[0].equals("scopes")) {
+                span.log("   " + array[1]);
+                len3 = len4 = span.getLength();
             }
             if (array[0].equals("translate")) {
                 span.log("   " + array[1]);
@@ -340,6 +349,7 @@ final class SimpleReporter extends A4Reporter {
         }
     }
 
+
     private void cb(Serializable... objs) {
         cb.callback(objs);
     }
@@ -380,8 +390,33 @@ final class SimpleReporter extends A4Reporter {
     public void translate(String solver, int bitwidth, int maxseq, int mintrace, int maxtrace, int skolemDepth, int symmetry, String strat) {
         startTime = System.currentTimeMillis();
         startCount = 0;
+        startStep = -1;
+        seenStep = -1;
         cb("translate", "Solver=" + solver + (maxtrace < 1 ? "" : " Steps=" + mintrace + ".." + maxtrace) + " Bitwidth=" + bitwidth + " MaxSeq=" + maxseq + (skolemDepth == 0 ? "" : " SkolemDepth=" + skolemDepth) + " Symmetry=" + (symmetry > 0 ? ("" + symmetry) : "OFF") + " Mode=" + strat + "\n");
     }
+
+    /** {@inheritDoc} */
+    @Override
+    public void actualScopes(Iterable<Sig> sigs, Map<PrimSig,Integer> scopes, Set<Sig> exacts) {
+
+        StringBuilder sb = new StringBuilder();
+        boolean first = true;
+        for (Sig s : sigs)
+            if (!s.builtin && s.isSubset == null) {
+                if (!first)
+                    sb.append(", ");
+                else
+                    first = false;
+                if (exacts.contains(s))
+                    sb.append("exactly " + scopes.get(s) + " " + Util.tailThis(s.label));
+                else if (scopes.keySet().contains(s))
+                    sb.append(scopes.get(s) + " " + Util.tailThis(s.label));
+                else
+                    sb.append(Util.tailThis(s.label) + "????");
+            }
+        cb("scopes", "Actual scopes: " + sb.toString() + "\n");
+    }
+
 
     /** {@inheritDoc} */
     @Override
@@ -593,7 +628,7 @@ final class SimpleReporter extends A4Reporter {
 
     /** Helper method to write out a full XML file. */
     private static void writeXML(A4Reporter rep, Module mod, String filename, A4Solution sol, Map<String,String> sources) throws Exception {
-        sol.writeXML(rep, filename, mod.getAllFunc(), sources);
+        sol.writeXML(rep, filename, mod.getAllReachableUserDefinedFunc(), sources);
         if (AlloyCore.isDebug())
             validate(filename);
     }
@@ -601,7 +636,7 @@ final class SimpleReporter extends A4Reporter {
     private int warn = 0;
 
     /** Task that performs solution enumeration. */
-    static final class SimpleTask2 implements WorkerTask {
+    public static final class SimpleTask2 implements WorkerTask {
 
         private static final long       serialVersionUID = 0;
         public int                      index            = -1; // [electrum] registers which iteration operation to perform
@@ -683,7 +718,7 @@ final class SimpleReporter extends A4Reporter {
     }
 
     /** Task that perform one command. */
-    static final class SimpleTask1 implements WorkerTask {
+    public static final class SimpleTask1 implements WorkerTask {
 
         private static final long serialVersionUID = 0;
         public A4Options          options;
@@ -701,6 +736,7 @@ final class SimpleReporter extends A4Reporter {
 
         @Override
         public void run(WorkerCallback out) throws Exception {
+            boolean transformer = false;
             cb(out, "S2", "Starting the solver...\n\n");
             final SimpleReporter rep = new SimpleReporter(out, options.recordKodkod);
             final Module world = CompUtil.parseEverything_fromFile(rep, map, options.originalFilename, resolutionMode);
@@ -749,51 +785,54 @@ final class SimpleReporter extends A4Reporter {
                             result.add(tempXML);
                         else if (ai.highLevelCore().a.size() > 0)
                             result.add(tempCNF + ".core");
-                        else
+                        else {
+                            transformer |= ai.opt.solver.isTransformer();
                             result.add("");
+                        }
                     }
             (new File(tempdir)).delete(); // In case it was UNSAT, or
                                          // canceled...
-            if (result.size() > 1) {
+            if (!transformer && result.size() > 1) {
                 rep.cb("bold", "" + result.size() + " commands were executed. The results are:\n");
                 for (int i = 0; i < result.size(); i++) {
                     Command r = world.getAllCommands().get(i);
                     if (result.get(i) == null) {
-                        rep.cb("", "   #" + (i + 1) + ": Unknown.\n");
                         continue;
                     }
+                    StringBuilder sb = new StringBuilder();
                     if (result.get(i).endsWith(".xml")) {
                         rep.cb("", "   #" + (i + 1) + ": ");
                         rep.cb("link", r.check ? "Counterexample found. " : "Instance found. ", "XML: " + result.get(i));
-                        rep.cb("", r.label + (r.check ? " is invalid" : " is consistent"));
+                        sb.append(r.label + (r.check ? " is invalid" : " is consistent"));
                         if (r.expects == 0)
-                            rep.cb("", ", contrary to expectation");
+                        	sb.append(", contrary to expectation");
                         else if (r.expects == 1)
-                            rep.cb("", ", as expected");
+                        	sb.append(", as expected");
                     } else if (result.get(i).endsWith(".core")) {
                         rep.cb("", "   #" + (i + 1) + ": ");
                         rep.cb("link", r.check ? "No counterexample found. " : "No instance found. ", "CORE: " + result.get(i));
-                        rep.cb("", r.label + (r.check ? " may be valid" : " may be inconsistent"));
+                        sb.append(r.label + (r.check ? " may be valid" : " may be inconsistent"));
                         if (r.expects == 1)
-                            rep.cb("", ", contrary to expectation");
+                        	sb.append(", contrary to expectation");
                         else if (r.expects == 0)
-                            rep.cb("", ", as expected");
+                        	sb.append(", as expected");
                     } else {
                         if (r.check)
-                            rep.cb("", "   #" + (i + 1) + ": No counterexample found. " + r.label + " may be valid");
+                        	sb.append("   #" + (i + 1) + ": No counterexample found. " + r.label + " may be valid");
                         else
-                            rep.cb("", "   #" + (i + 1) + ": No instance found. " + r.label + " may be inconsistent");
+                        	sb.append("   #" + (i + 1) + ": No instance found. " + r.label + " may be inconsistent");
                         if (r.expects == 1)
-                            rep.cb("", ", contrary to expectation");
+                        	sb.append(", contrary to expectation");
                         else if (r.expects == 0)
-                            rep.cb("", ", as expected");
+                        	sb.append(", as expected");
                     }
-                    rep.cb("", ".\n");
+                    sb.append(".\n");
+                    rep.cb("", sb.toString());
                 }
                 rep.cb("", "\n");
             }
             if (rep.warn > 1)
-                rep.cb("bold", "Note: There were " + rep.warn + " compilation warnings. Please scroll up to see them.\n");
+                rep.cb("bold", "Note: There were " + rep.warn + " compilation warnings.\n");
             if (rep.warn == 1)
                 rep.cb("bold", "Note: There was 1 compilation warning. Please scroll up to see it.\n");
 

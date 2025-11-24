@@ -37,6 +37,7 @@ import edu.mit.csail.sdg.alloy4.ErrorSyntax;
 import edu.mit.csail.sdg.alloy4.ErrorType;
 import edu.mit.csail.sdg.alloy4.Pair;
 import edu.mit.csail.sdg.alloy4.Util;
+import edu.mit.csail.sdg.ast.Assert;
 import edu.mit.csail.sdg.ast.Decl;
 import edu.mit.csail.sdg.ast.Expr;
 import edu.mit.csail.sdg.ast.ExprBinary;
@@ -56,6 +57,7 @@ import edu.mit.csail.sdg.ast.Sig.Field;
 import edu.mit.csail.sdg.ast.Sig.PrimSig;
 import edu.mit.csail.sdg.ast.Sig.SubsetSig;
 import edu.mit.csail.sdg.ast.VisitReturn;
+import edu.mit.csail.sdg.parser.Macro;
 
 /** Mutable; represents an instance. */
 
@@ -388,8 +390,7 @@ public final class SimInstance extends VisitReturn<Object> {
         if (s.isAbstract != null && !s.children().isEmpty())
             throw new ErrorAPI("Cannot add an atom to an abstract parent sig.");
         String label = sig.label + "$";
-        if (label.startsWith("this/"))
-            label = label.substring(5);
+        label = Util.tailThis(label);
         for (int i = 0;; i++) {
             SimAtom atom = SimAtom.make(label + i);
             if (hasAtom(atom))
@@ -520,7 +521,7 @@ public final class SimInstance extends VisitReturn<Object> {
     }
 
     /**
-     * Convenience method that evalutes x and casts the result to be a boolean.
+     * Convenience method that evaluates x and casts the result to be a boolean.
      *
      * @return the boolean - if x evaluates to a boolean
      * @throws ErrorFatal - if x does not evaluate to a boolean
@@ -535,7 +536,7 @@ public final class SimInstance extends VisitReturn<Object> {
     }
 
     /**
-     * Convenience method that evalutes x and cast the result to be a int.
+     * Convenience method that evaluates x and cast the result to be a int.
      *
      * @return the int - if x evaluates to an int
      * @throws ErrorFatal - if x does not evaluate to an int
@@ -552,7 +553,7 @@ public final class SimInstance extends VisitReturn<Object> {
     }
 
     /**
-     * Convenience method that evalutes x and cast the result to be a tupleset
+     * Convenience method that evaluates x and cast the result to be a tupleset
      *
      * @return the tupleset - if x evaluates to a tupleset
      * @throws ErrorFatal - if x does not evaluate to a tupleset
@@ -912,6 +913,21 @@ public final class SimInstance extends VisitReturn<Object> {
             throw new ErrorFatal("Unknown sig " + x + " encountered during evaluation.");
     }
 
+    @Override
+    public Object visit(Func x) throws Err {
+        return null;
+    }
+
+    @Override
+    public Object visit(Assert x) throws Err {
+        return null;
+    }
+
+    @Override
+    public Object visit(Macro x) throws Err {
+        return null;
+    }
+
     /** {@inheritDoc} */
     @Override
     public SimTupleset visit(Field x) throws Err {
@@ -944,7 +960,7 @@ public final class SimInstance extends VisitReturn<Object> {
     }
 
     /**
-     * Helper method for enumerating all possibilties for a
+     * Helper method for enumerating all possibilities for a
      * quantification-expression.
      */
     private int enumerate(final TempList<SimTuple> store, int sum, final ExprQt x, final Expr body, final int i) throws Err { // if op is ALL NO SOME ONE LONE then it always returns
@@ -1324,7 +1340,7 @@ public final class SimInstance extends VisitReturn<Object> {
                     }
             return "";
         } catch (Err ex) {
-            return "An internal error has occured:\n" + ex.dump();
+            return "An internal error has occurred:\n" + ex.dump();
         }
     }
 }
